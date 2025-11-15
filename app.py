@@ -1,3 +1,9 @@
+# --- [CORREÇÃO CRÍTICA DE AMBIENTE: EVENTLET MONKEY PATCH] ---
+# ESTAS LINHAS DEVEM VIR ANTES DE QUALQUER OUTRO IMPORT, EXCETO OS PADRÕES DO PYTHON.
+import eventlet
+eventlet.monkey_patch()
+# ------------------------------------------------------------
+
 # --- [IMPORTAÇÕES] ---
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
