@@ -4,6 +4,6 @@ gevent
 gunicorn
 PyJWT
 psycopg2-binary
-google-generativeai
+google-generativeai>=0.5.0
 google-api-python-client
 python-dotenv
