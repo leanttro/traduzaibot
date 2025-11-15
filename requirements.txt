@@ -2,8 +2,8 @@ Flask
 Flask-SocketIO
 gevent
 gunicorn
-google-generativeai
-python-dotenv
-psycopg2-binary
 PyJWT
+psycopg2-binary
+google-generativeai
 google-api-python-client
+python-dotenv
