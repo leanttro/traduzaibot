@@ -1,6 +1,6 @@
 Flask
 Flask-SocketIO
-eventlet
+gevent
 gunicorn
 PyJWT
 psycopg2-binary

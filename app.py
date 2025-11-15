@@ -1,8 +1,4 @@
-# --- [CORREÇÃO CRÍTICA DE AMBIENTE: EVENTLET MONKEY PATCH] ---
-# ESTAS LINHAS DEVEM VIR ANTES DE QUALQUER OUTRO IMPORT, EXCETO OS PADRÕES DO PYTHON.
-import eventlet
-eventlet.monkey_patch()
-# ------------------------------------------------------------
+# --- [REMOVIDO] As linhas "import eventlet" e "eventlet.monkey_patch()" foram DELETADAS daqui ---
 
 # --- [IMPORTAÇÕES] ---
 from flask import Flask, render_template, request, jsonify
@@ -25,7 +21,6 @@ from googleapiclient.errors import HttpError
 print("ℹ️  Iniciando o TraduzAIBot v3 (Chat Privado por Salas)...")
 load_dotenv()
 app = Flask(__name__, template_folder='.', static_folder='.', static_url_path='')
-# REMOVIDO: async_mode='gevent' da inicialização para evitar conflitos com Gunicorn/Render
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- 2. CONFIGURAÇÃO DAS CHAVES ---
@@ -81,7 +76,7 @@ else:
         print(f"❌ Erro ao inicializar o modelo Gemini: {e}")
 
 # --- 5. ROTAS DE AUTENTICAÇÃO (HTTP) ---
-
+# (As rotas de login/register estão corretas e permanecem as mesmas)
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -89,7 +84,6 @@ def index():
 @app.route('/api/auth/register', methods=['POST'])
 def register_user():
     data = request.get_json()
-    # CORREÇÃO: Usando .strip() para evitar espaços em branco
     username = data.get('username').strip() if data.get('username') else None
     email = data.get('email').strip() if data.get('email') else None
     
@@ -103,11 +97,9 @@ def register_user():
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO traduzaibot_users (username, email, access_code) VALUES (%s, %s, %s)",
-            # CORREÇÃO: Salvando o código de acesso em MAIÚSCULAS para consistência
             (username, email, access_code.upper())
         )
         conn.commit()
-        # Retorna o código em maiúsculas
         return jsonify({'message': 'Registro bem-sucedido!', 'access_code': access_code.upper()}), 201
     except psycopg2.IntegrityError:
         conn.rollback()
@@ -121,7 +113,6 @@ def register_user():
 @app.route('/api/auth/login', methods=['POST'])
 def login_user():
     data = request.get_json()
-    # CORREÇÃO CRÍTICA: Remove espaços (.strip()) e força MAIÚSCULAS (.upper())
     access_code = data.get('access_code', '').strip().upper() 
     
     if not access_code:
@@ -131,7 +122,6 @@ def login_user():
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        # Busca com o código MAIÚSCULO e sem espaços
         cur.execute("SELECT id, username, email FROM traduzaibot_users WHERE access_code = %s", (access_code,))
         user = cur.fetchone()
         if user:
@@ -147,7 +137,6 @@ def login_user():
                 'user': {'id': user['id'], 'username': user['username'], 'email': user['email']}
             })
         else:
-            # ERRO 401: Código inválido
             return jsonify({'error': 'Código de Acesso inválido.'}), 401
     except Exception as e:
         return jsonify({'error': f'Erro interno: {e}'}), 500
@@ -155,9 +144,8 @@ def login_user():
         if conn: conn.close()
 
 # --- 6. ROTAS PROTEGIDAS (HTTP) ---
-
+# (As rotas /find_user e /users estão corretas e permanecem as mesmas)
 def token_required(f):
-    """Decorador para proteger rotas que exigem um token JWT."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
@@ -167,7 +155,6 @@ def token_required(f):
             return jsonify({'error': 'Token é obrigatório!'}), 401
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            # Passa o user_id para a rota
             return f(data['user_id'], *args, **kwargs)
         except jwt.ExpiredSignatureError:
             return jsonify({'error': 'Token expirou!'}), 401
@@ -178,9 +165,7 @@ def token_required(f):
 @app.route('/api/chat/find_user', methods=['POST'])
 @token_required
 def find_user(current_user_id):
-    """Busca um usuário pelo email ou código para iniciar chat."""
     data = request.get_json()
-    # CORREÇÃO: Remove espaços (.strip()) e força MAIÚSCULAS (.upper())
     query = data.get('query', '').strip().upper() 
     if not query:
         return jsonify({'error': 'Termo de busca (email ou código) é obrigatório.'}), 400
@@ -189,7 +174,6 @@ def find_user(current_user_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        # Busca por email (minúsculo) OU código (maiúsculo e limpo), e que NÃO SEJA o próprio usuário
         cur.execute(
             "SELECT id, username, email FROM traduzaibot_users WHERE (LOWER(email) = %s OR access_code = %s) AND id != %s",
             (query.lower(), query, current_user_id) 
@@ -208,16 +192,13 @@ def find_user(current_user_id):
 @app.route('/api/chat/users', methods=['GET'])
 @token_required
 def list_users(current_user_id):
-    """Lista todos os usuários exceto o usuário logado (para o Lobby)."""
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        # Busca todos os usuários exceto o logado
         cur.execute("SELECT id, username, email FROM traduzaibot_users WHERE id != %s ORDER BY username ASC", (current_user_id,))
         users = cur.fetchall()
         
-        # Busca as conversas existentes do usuário logado
         cur.execute("""
             SELECT p2.user_id as partner_id, t.username as partner_username, r.id as room_id
             FROM traduzaibot_room_participants p1
@@ -236,7 +217,7 @@ def list_users(current_user_id):
         if conn: conn.close()
 
 # --- 7. HANDLERS DE CHAT (WEBSOCKET) ---
-# (O restante do SocketIO permanece o mesmo, focado em Salas e Tradução)
+# (A lógica do SocketIO está correta e permanece a mesma)
 user_socket_map = {} 
 socket_user_map = {} 
 
@@ -261,7 +242,6 @@ def handle_disconnect():
 
 @socketio.on('authenticate')
 def handle_authentication(data):
-    """Autentica o socket e coloca o usuário em todas as suas salas de chat existentes."""
     token = data.get('token')
     user_data = get_user_from_token(token)
     
@@ -272,30 +252,24 @@ def handle_authentication(data):
     user_id = user_data['user_id']
     username = user_data['username']
     
-    # Mapeia user_id <-> socket.sid
     user_socket_map[user_id] = request.sid
     socket_user_map[request.sid] = user_id
     
     print(f"✅ Usuário '{username}' (ID: {user_id}) autenticado no socket {request.sid}")
     emit('auth_success', {'message': f'Bem-vindo, {username}!'})
 
-    # (A MÁGICA) Coloca o usuário em todas as salas de chat que ele já participa
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        # Busca todas as salas que este usuário participa
         cur.execute("SELECT room_id FROM traduzaibot_room_participants WHERE user_id = %s", (user_id,))
         rooms = cur.fetchall()
-        
         room_list = []
         for room in rooms:
             room_id_str = str(room['room_id'])
-            join_room(room_id_str) # Coloca o socket na sala
+            join_room(room_id_str) 
             room_list.append(room_id_str)
-            
         print(f"🚪 Usuário {user_id} adicionado às salas: {room_list}")
-        
     except Exception as e:
         print(f"❌ Erro ao buscar/entrar em salas: {e}")
     finally:
@@ -303,7 +277,6 @@ def handle_authentication(data):
 
 @socketio.on('request_conversation')
 def handle_request_conversation(data):
-    """Inicia uma nova conversa (ou encontra uma existente) com outro usuário."""
     token = data.get('token')
     user_data = get_user_from_token(token)
     if not user_data: return
@@ -323,7 +296,6 @@ def handle_request_conversation(data):
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        # 1. Tenta encontrar uma sala privada existente entre esses dois usuários
         cur.execute("""
             SELECT p1.room_id
             FROM traduzaibot_room_participants p1
@@ -336,40 +308,31 @@ def handle_request_conversation(data):
         
         if existing_room:
             room_id = existing_room['room_id']
-            # Emite a sala de volta para o solicitante
             emit('conversation_ready', {'room_id': room_id}, room=request.sid)
         else:
-            # 2. Cria uma nova sala
             cur.execute("INSERT INTO traduzaibot_chat_rooms (is_private) VALUES (TRUE) RETURNING id")
             new_room_id = cur.fetchone()['id']
             
-            # Adiciona os dois participantes
             cur.execute(
                 "INSERT INTO traduzaibot_room_participants (user_id, room_id) VALUES (%s, %s), (%s, %s)",
                 (user_ids[0], new_room_id, user_ids[1], new_room_id)
             )
             conn.commit()
             
-            # 3. Coloca o solicitante (User A) na sala do Socket.IO
             join_room(str(new_room_id))
             
-            # 4. Envia o convite para o User B (se ele estiver online)
             target_socket_sid = user_socket_map.get(target_user_id)
             if target_socket_sid:
-                # Coloca o User B na sala do Socket.IO também
                 join_room(str(new_room_id), sid=target_socket_sid)
                 
-                # [CORREÇÃO] Busca o nome do usuário alvo para o convite
                 cur.execute("SELECT username FROM traduzaibot_users WHERE id = %s", (target_user_id,))
                 target_user_name = cur.fetchone()['username']
                 
-                # Emite o "convite" (que é apenas a sala nova) para o User B
                 emit('new_conversation_invite', {
                     'room_id': new_room_id,
                     'with_user': {'id': my_user_id, 'username': my_username, 'partner_name': target_user_name}
                 }, room=target_socket_sid)
 
-            # 5. Emite a sala de volta para o solicitante (User A)
             emit('conversation_ready', {'room_id': new_room_id}, room=request.sid)
             
     except Exception as e:
@@ -381,7 +344,6 @@ def handle_request_conversation(data):
 
 @socketio.on('request_chat_history')
 def handle_chat_history(data):
-    """Busca o histórico de mensagens de uma sala específica."""
     token = data.get('token')
     user_data = get_user_from_token(token)
     if not user_data: return
@@ -394,7 +356,6 @@ def handle_chat_history(data):
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        # Busca mensagens E o nome do remetente
         cur.execute("""
             SELECT m.*, u.username 
             FROM traduzaibot_messages m
@@ -405,7 +366,6 @@ def handle_chat_history(data):
         
         messages = cur.fetchall()
         
-        # Converte para JSON serializável
         message_list = []
         for msg in messages:
             message_list.append({
@@ -420,7 +380,6 @@ def handle_chat_history(data):
                 'timestamp': msg['timestamp'].strftime('%Y-%m-%dT%H:%M:%S')
             })
         
-        # Envia o histórico SÓ para o solicitante
         emit('chat_history_loaded', {'room_id': room_id, 'messages': message_list}, room=request.sid)
         
     except Exception as e:
@@ -431,7 +390,6 @@ def handle_chat_history(data):
         
 @socketio.on('send_message')
 def handle_chat_message(data):
-    """Recebe uma mensagem, traduz, salva no DB e transmite PARA A SALA."""
     token = data.get('token')
     user_data = get_user_from_token(token)
     if not user_data or not gemini_model:
@@ -450,7 +408,6 @@ def handle_chat_message(data):
         emit('chat_error', {'error': 'ID da Sala é obrigatório.'})
         return
 
-    # 2. INTERCEPTADOR DE AJUDA
     if user_message.lower().startswith('/ajuda'):
         query = user_message.lower().replace('/ajuda', '').strip()
         print(f"🤖 Interceptado /ajuda: '{query}'")
@@ -468,7 +425,6 @@ def handle_chat_message(data):
                         response=tool_response
                     ))
                 )
-            # CORREÇÃO: Pega o texto gerado após a ferramenta
             help_text = response.candidates[0].content.parts[0].text
             message_packet = {
                 'room_id': room_id,
@@ -484,7 +440,6 @@ def handle_chat_message(data):
             emit('chat_error', {'error': f'Erro ao processar /ajuda: {e}'})
             return
 
-    # 3. LÓGICA DE TRADUÇÃO (Normal)
     print(f"💬 Sala {room_id} | Mensagem de '{username}': '{user_message}'")
     translation_prompt = f"""
     Traduza o texto a seguir, do idioma '{my_lang}' para o idioma '{target_lang}'.
@@ -497,10 +452,8 @@ def handle_chat_message(data):
             translation_prompt,
             safety_settings={'HATE': 'BLOCK_NONE', 'HARASSMENT': 'BLOCK_NONE'}
         )
-        # CORREÇÃO: Pega o texto gerado
         translated_text = response.text.strip()
 
-        # 4. SALVA NO BANCO DE DADOS (com o room_id correto)
         conn = None
         try:
             conn = get_db_connection()
@@ -518,7 +471,6 @@ def handle_chat_message(data):
         finally:
             if conn: conn.close()
 
-        # 5. Prepara o pacote de dados
         message_packet = {
             'room_id': room_id, 
             'username': username,
@@ -529,7 +481,6 @@ def handle_chat_message(data):
             'timestamp': datetime.now().strftime('%H:%M')
         }
         
-        # 6. Emite para a SALA ESPECÍFICA (corrigido: usa str(room_id))
         emit('receive_message', message_packet, room=str(room_id))
 
     except Exception as e:
@@ -540,8 +491,4 @@ def handle_chat_message(data):
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Servidor Socket.IO (v3 - Salas) rodando em http://localhost:{port}")
-    # Nota: Removido 'async_mode' para maior compatibilidade com Gunicorn no Render
-    try:
-        socketio.run(app, host="0.0.0.0", port=port, debug=True, allow_unsafe_werkzeug=True)
-    except ImportError:
-        socketio.run(app, host="0.0.0.0", port=port, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=port, debug=True)
