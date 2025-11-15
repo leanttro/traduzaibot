@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TraduzAIBot | Chat Global</title>
+    
+    <!-- Tailwind CSS para estilo rápido -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Biblioteca Cliente do Socket.IO (ESSENCIAL) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Ajuste para a barra de rolagem */
+        #messages-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        #messages-container::-webkit-scrollbar-track {
+            background: #2d3748; /* gray-800 */
+        }
+        #messages-container::-webkit-scrollbar-thumb {
+            background: #4a5568; /* gray-600 */
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col antialiased">
+
+    <!-- TELA DE LOGIN (Inicia visível) -->
+    <div id="username-screen" class="flex items-center justify-center h-full">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold text-center mb-6">Entrar no TraduzAIBot</h2>
+            <div class="space-y-4">
+                <input 
+                    type="text" 
+                    id="username-input" 
+                    placeholder="Digite seu nome..." 
+                    class="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                <button 
+                    id="join-button" 
+                    class="w-full p-3 bg-blue-600 rounded-md font-semibold hover:bg-blue-700 transition-colors"
+                >
+                    Entrar no Chat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TELA DE CHAT (Inicia oculta) -->
+    <div id="chat-screen" class="hidden flex-col h-full">
+        <!-- Header do Chat -->
+        <header class="bg-gray-800 py-4 px-6 shadow-md flex justify-between items-center">
+            <h1 class="text-xl font-bold">TraduzAIBot 🌎</h1>
+            <div class="text-sm">
+                Conectado como: <span id="username-display" class="font-semibold">...</span>
+            </div>
+        </header>
+
+        <!-- Container de Mensagens -->
+        <main id="messages-container" class="flex-grow overflow-y-auto p-6 space-y-4">
+            <!-- Mensagens do chat serão injetadas aqui pelo JS -->
+            <div class="flex justify-start">
+                <div class="bg-gray-700 rounded-lg rounded-bl-none p-3 max-w-lg">
+                    <div class="font-bold text-blue-300">Sistema</div>
+                    <p class="text-sm mt-1">Bem-vindo! As mensagens enviadas serão traduzidas para todos os usuários.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Área de Input -->
+        <footer class="p-4 bg-gray-800 shadow-inner">
+            <!-- Seletores de Idioma -->
+            <div class="flex items-center gap-4 mb-3">
+                <div class="flex-1">
+                    <label for="my-lang" class="text-xs font-medium text-gray-400">MEU IDIOMA:</label>
+                    <select id="my-lang" class="w-full p-2 bg-gray-700 rounded-md text-sm border border-gray-600 focus:outline-none">
+                        <option value="Português">Português</option>
+                        <option value="Inglês">Inglês</option>
+                        <option value="Espanhol">Espanhol</option>
+                        <option value="Francês">Francês</option>
+                        <option value="Japonês">Japonês</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label for="target-lang" class="text-xs font-medium text-gray-400">TRADUZIR PARA:</label>
+                    <select id="target-lang" class="w-full p-2 bg-gray-700 rounded-md text-sm border border-gray-600 focus:outline-none">
+                        <option value="Inglês">Inglês</option>
+                        <option value="Português">Português</option>
+                        <option value="Espanhol">Espanhol</option>
+                        <option value="Francês">Francês</option>
+                        <option value="Japonês">Japonês</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Input de Mensagem -->
+            <div class="flex items-center gap-3">
+                <input 
+                    type="text" 
+                    id="message-input" 
+                    placeholder="Digite sua mensagem..." 
+                    class="flex-grow p-3 bg-gray-700 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autocomplete="off"
+                >
+                <button 
+                    id="send-button" 
+                    class="bg-blue-600 text-white p-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex-shrink-0"
+                >
+                    <svg class="w-6 h-6 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- 1. CONEXÃO COM O SOCKET.IO ---
+            // O `io()` se conecta ao servidor Flask-SocketIO que serviu a página.
+            const socket = io();
+
+            // --- 2. SELEÇÃO DOS ELEMENTOS DO DOM ---
+            const usernameScreen = document.getElementById('username-screen');
+            const chatScreen = document.getElementById('chat-screen');
+            
+            const usernameInput = document.getElementById('username-input');
+            const joinButton = document.getElementById('join-button');
+            const usernameDisplay = document.getElementById('username-display');
+            
+            const messagesContainer = document.getElementById('messages-container');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            
+            const myLangSelect = document.getElementById('my-lang');
+            const targetLangSelect = document.getElementById('target-lang');
+            
+            let myUsername = ''; // Variável para guardar o nome do usuário
+
+            // --- 3. LÓGICA DE LOGIN ---
+            function joinChat() {
+                const username = usernameInput.value.trim();
+                if (username) {
+                    myUsername = username;
+                    usernameDisplay.textContent = myUsername;
+                    
+                    // Esconde a tela de login e mostra a tela de chat
+                    usernameScreen.classList.add('hidden');
+                    chatScreen.classList.remove('hidden');
+                    chatScreen.classList.add('flex');
+                    
+                    messageInput.focus();
+                } else {
+                    alert('Por favor, digite um nome de usuário.');
+                }
+            }
+            
+            // Event Listeners para o Login
+            joinButton.addEventListener('click', joinChat);
+            usernameInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    joinChat();
+                }
+            });
+
+            // --- 4. LÓGICA DE ENVIO DE MENSAGEM ---
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                const myLang = myLangSelect.value;
+                const targetLang = targetLangSelect.value;
+
+                if (message && myUsername) {
+                    // Emite o evento 'send_message' para o servidor Python
+                    socket.emit('send_message', {
+                        'message': message,
+                        'my_lang': myLang,
+                        'target_lang': targetLang,
+                        'username': myUsername
+                    });
+                    
+                    // Limpa o input
+                    messageInput.value = '';
+                }
+            }
+            
+            // Event Listeners para Enviar Mensagem
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Impede a quebra de linha
+                    sendMessage();
+                }
+            });
+            
+            // --- 5. LÓGICA DE RECEBIMENTO DE MENSAGEM ---
+            // Ouve o evento 'receive_message' que o servidor emite
+            socket.on('receive_message', (packet) => {
+                console.log('Mensagem recebida:', packet);
+                
+                // Verifica se a mensagem é deste próprio usuário
+                const isMe = packet.username === myUsername;
+                
+                // Cria o elemento da bolha de chat
+                const bubble = document.createElement('div');
+                bubble.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+                
+                // Define a cor e o alinhamento da bolha
+                const bgColor = isMe ? 'bg-blue-600' : 'bg-gray-700';
+                const roundedCorners = isMe ? 'rounded-br-none' : 'rounded-bl-none';
+                
+                // Monta o HTML interno da bolha
+                bubble.innerHTML = `
+                    <div class="${bgColor} rounded-lg ${roundedCorners} p-3 max-w-lg shadow-md">
+                        <div class="font-bold ${isMe ? 'text-white' : 'text-blue-300'} text-sm">${packet.username}</div>
+                        
+                        <!-- Mensagem Traduzida (Principal) -->
+                        <p class="text-base mt-1">${packet.translated_message}</p>
+                        
+                        <!-- Mensagem Original (Secundária) -->
+                        <p class="text-xs text-gray-300 opacity-80 mt-2 pt-1 border-t border-white/20">
+                            (${packet.original_lang}): ${packet.original_message}
+                        </p>
+                    </div>
+                `;
+                
+                messagesContainer.appendChild(bubble);
+                
+                // Rola para o final do chat
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            });
+            
+            // Ouve por erros do servidor
+            socket.on('chat_error', (data) => {
+                console.error('Erro do servidor:', data.error);
+                // Você pode adicionar uma mensagem de erro no chat aqui
+                const errorBubble = document.createElement('div');
+                errorBubble.className = 'flex justify-center';
+                errorBubble.innerHTML = `
+                    <div class="bg-red-800 text-red-100 rounded-lg p-3 max-w-lg text-sm">
+                        <strong>Erro do Sistema:</strong> ${data.error}
+                    </div>
+                `;
+                messagesContainer.appendChild(errorBubble);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            });
+            
+        });
+    </script>
+</body>
+</html>
