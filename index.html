@@ -387,6 +387,8 @@
                     console.log('Socket autenticado:', data.message);
                     // [NOVO] Carrega conversas existentes APÓS a autenticação do socket
                     loadLobbyData(); 
+                    // [NOVO] Anexa os LISTENERS DE MENSAGEM SÓ DEPOIS QUE O SOCKET ESTÁ PRONTO
+                    attachChatListeners();
                 });
 
                 // (C) Ouve por erros
@@ -553,6 +555,7 @@
                 const myLang = myLangSelect.value;
                 const targetLang = targetLangSelect.value;
 
+                // [CRITICAL CHECK] Só envia se tiver mensagem, token e estiver em uma sala
                 if (message && token && currentRoomId) {
                     socket.emit('send_message', {
                         'message': message,
@@ -562,6 +565,8 @@
                         'room_id': currentRoomId
                     });
                     messageInput.value = '';
+                } else if (!currentRoomId) {
+                    alert("Você deve selecionar ou iniciar uma conversa para enviar uma mensagem.");
                 }
             }
 
@@ -596,12 +601,27 @@
                 messagesContainer.appendChild(bubble);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
+            
+            // [NOVO] Função para anexar os Listeners de envio
+            function attachChatListeners() {
+                 if (sendButton) {
+                    sendButton.addEventListener('click', sendMessage);
+                 }
+                 if (messageInput) {
+                    messageInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') { 
+                            e.preventDefault(); 
+                            sendMessage(); 
+                        }
+                    });
+                    // Remove o placeholder de busca para evitar confusão no chat ativo
+                    messageInput.placeholder = "Digite sua mensagem ou /ajuda...";
+                 }
+            }
+
 
             // --- LISTENERS DE EVENTOS ---
-            sendButton.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
-            });
+            // Removidos do escopo global e movidos para attachChatListeners()
             
             // Listeners do Modal de Convite
             inviteRejectBtn.addEventListener('click', () => {
