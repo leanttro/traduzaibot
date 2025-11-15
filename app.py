@@ -83,10 +83,13 @@ def index():
 @app.route('/api/auth/register', methods=['POST'])
 def register_user():
     data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
+    # CORREÇÃO: Usando .strip() para evitar espaços em branco
+    username = data.get('username').strip() if data.get('username') else None
+    email = data.get('email').strip() if data.get('email') else None
+    
     if not username or not email:
         return jsonify({'error': 'Username e Email são obrigatórios.'}), 400
+    
     access_code = generate_access_code()
     conn = None
     try:
@@ -94,10 +97,12 @@ def register_user():
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO traduzaibot_users (username, email, access_code) VALUES (%s, %s, %s)",
-            (username, email, access_code)
+            # CORREÇÃO: Forçando o código de acesso a ser salvo em letras maiúsculas
+            (username, email, access_code.upper())
         )
         conn.commit()
-        return jsonify({'message': 'Registro bem-sucedido!', 'access_code': access_code}), 201
+        # Retorna o código em maiúsculas
+        return jsonify({'message': 'Registro bem-sucedido!', 'access_code': access_code.upper()}), 201
     except psycopg2.IntegrityError:
         conn.rollback()
         return jsonify({'error': 'Este email já está cadastrado.'}), 409
@@ -110,13 +115,17 @@ def register_user():
 @app.route('/api/auth/login', methods=['POST'])
 def login_user():
     data = request.get_json()
-    access_code = data.get('access_code')
+    # CORREÇÃO CRÍTICA: Remove espaços e coloca em MAIÚSCULAS para bater com o DB
+    access_code = data.get('access_code', '').strip().upper() 
+    
     if not access_code:
         return jsonify({'error': 'Código de Acesso é obrigatório.'}), 400
+    
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        # Busca com o código MAIÚSCULO e sem espaços
         cur.execute("SELECT id, username, email FROM traduzaibot_users WHERE access_code = %s", (access_code,))
         user = cur.fetchone()
         if user:
@@ -132,6 +141,7 @@ def login_user():
                 'user': {'id': user['id'], 'username': user['username'], 'email': user['email']}
             })
         else:
+            # ERRO 401: Código inválido
             return jsonify({'error': 'Código de Acesso inválido.'}), 401
     except Exception as e:
         return jsonify({'error': f'Erro interno: {e}'}), 500
@@ -164,7 +174,8 @@ def token_required(f):
 def find_user(current_user_id):
     """Busca um usuário pelo email ou código para iniciar chat."""
     data = request.get_json()
-    query = data.get('query', '').strip()
+    # CORREÇÃO: Remove espaços e coloca em MAIÚSCULAS
+    query = data.get('query', '').strip().upper() 
     if not query:
         return jsonify({'error': 'Termo de busca (email ou código) é obrigatório.'}), 400
     
@@ -174,8 +185,9 @@ def find_user(current_user_id):
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         # Busca por email OU código, e que NÃO SEJA o próprio usuário
         cur.execute(
+            # A busca por email não deve ser .upper(), apenas o código
             "SELECT id, username, email FROM traduzaibot_users WHERE (email = %s OR access_code = %s) AND id != %s",
-            (query, query, current_user_id)
+            (query.lower(), query, current_user_id) # Usando lower() para email e upper() para código
         )
         user = cur.fetchone()
         if user:
@@ -200,7 +212,7 @@ def list_users(current_user_id):
         cur.execute("SELECT id, username, email FROM traduzaibot_users WHERE id != %s ORDER BY username ASC", (current_user_id,))
         users = cur.fetchall()
         
-        # [NOVO] Busca as conversas existentes do usuário logado
+        # Busca as conversas existentes do usuário logado
         cur.execute("""
             SELECT p2.user_id as partner_id, t.username as partner_username, r.id as room_id
             FROM traduzaibot_room_participants p1
@@ -219,7 +231,7 @@ def list_users(current_user_id):
         if conn: conn.close()
 
 # --- 7. HANDLERS DE CHAT (WEBSOCKET) ---
-# (O restante do SocketIO permanece o mesmo, focado em Salas e Tradução)
+# (Restante do SocketIO omitido por ser igual)
 user_socket_map = {} 
 socket_user_map = {} 
 
