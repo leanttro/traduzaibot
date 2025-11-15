@@ -19,6 +19,7 @@ from googleapiclient.errors import HttpError
 print("ℹ️  Iniciando o TraduzAIBot v3 (Chat Privado por Salas)...")
 load_dotenv()
 app = Flask(__name__, template_folder='.', static_folder='.', static_url_path='')
+# REMOVIDO: async_mode='gevent' da inicialização para evitar conflitos com Gunicorn/Render
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- 2. CONFIGURAÇÃO DAS CHAVES ---
@@ -30,7 +31,10 @@ CUSTOM_SEARCH_CX_ID = os.getenv('CUSTOM_SEARCH_CX_ID')
 # --- 3. CONEXÃO COM BANCO DE DADOS ---
 def get_db_connection():
     try:
-        conn = psycopg2.connect(os.getenv('DATABASE_URL'))
+        db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            raise ValueError("DATABASE_URL não configurada")
+        conn = psycopg2.connect(db_url)
         return conn
     except Exception as e:
         print(f"❌ ERRO CRÍTICO: Não foi possível conectar ao banco de dados: {e}")
@@ -71,7 +75,6 @@ else:
         print(f"❌ Erro ao inicializar o modelo Gemini: {e}")
 
 # --- 5. ROTAS DE AUTENTICAÇÃO (HTTP) ---
-# (Idênticas à v2 - Registro e Login)
 
 @app.route('/')
 def index():
@@ -135,10 +138,10 @@ def login_user():
     finally:
         if conn: conn.close()
 
-# --- 6. NOVAS ROTAS HTTP (Lobby) ---
+# --- 6. ROTAS PROTEGIDAS (HTTP) ---
 
 def token_required(f):
-    """Decorador para proteger rotas que exigem um token JWT (do seu app Oceano)"""
+    """Decorador para proteger rotas que exigem um token JWT."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
@@ -159,7 +162,7 @@ def token_required(f):
 @app.route('/api/chat/find_user', methods=['POST'])
 @token_required
 def find_user(current_user_id):
-    """Busca um usuário pelo email ou código (SUA IDEIA)"""
+    """Busca um usuário pelo email ou código para iniciar chat."""
     data = request.get_json()
     query = data.get('query', '').strip()
     if not query:
@@ -180,14 +183,45 @@ def find_user(current_user_id):
         else:
             return jsonify({'error': 'Usuário não encontrado ou é você mesmo.'}), 404
     except Exception as e:
+        print(f"❌ Erro ao buscar usuário: {e}")
+        return jsonify({'error': f'Erro interno: {e}'}), 500
+    finally:
+        if conn: conn.close()
+
+@app.route('/api/chat/users', methods=['GET'])
+@token_required
+def list_users(current_user_id):
+    """Lista todos os usuários exceto o usuário logado (para o Lobby)."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        # Busca todos os usuários exceto o logado
+        cur.execute("SELECT id, username, email FROM traduzaibot_users WHERE id != %s ORDER BY username ASC", (current_user_id,))
+        users = cur.fetchall()
+        
+        # [NOVO] Busca as conversas existentes do usuário logado
+        cur.execute("""
+            SELECT p2.user_id as partner_id, t.username as partner_username, r.id as room_id
+            FROM traduzaibot_room_participants p1
+            JOIN traduzaibot_room_participants p2 ON p1.room_id = p2.room_id AND p1.user_id != p2.user_id
+            JOIN traduzaibot_users t ON p2.user_id = t.id
+            JOIN traduzaibot_chat_rooms r ON p1.room_id = r.id
+            WHERE p1.user_id = %s
+        """, (current_user_id,))
+        conversations = cur.fetchall()
+
+        return jsonify({'users': users, 'conversations': conversations})
+    except Exception as e:
+        print(f"❌ Erro ao listar usuários: {e}")
         return jsonify({'error': f'Erro interno: {e}'}), 500
     finally:
         if conn: conn.close()
 
 # --- 7. HANDLERS DE CHAT (WEBSOCKET) ---
-# 
-user_socket_map = {} # { user_id -> socket.sid }
-socket_user_map = {} # { socket.sid -> user_id }
+# (O restante do SocketIO permanece o mesmo, focado em Salas e Tradução)
+user_socket_map = {} 
+socket_user_map = {} 
 
 def get_user_from_token(token):
     if not token: return None
@@ -265,7 +299,6 @@ def handle_request_conversation(data):
         emit('chat_error', {'error': 'ID do usuário alvo é obrigatório.'})
         return
     
-    # Ordena os IDs para garantir que (1, 2) seja a mesma sala que (2, 1)
     user_ids = sorted([my_user_id, target_user_id])
     
     conn = None
@@ -286,13 +319,10 @@ def handle_request_conversation(data):
         
         if existing_room:
             room_id = existing_room['room_id']
-            print(f"🤝 Sala existente encontrada: {room_id}")
             # Emite a sala de volta para o solicitante
             emit('conversation_ready', {'room_id': room_id}, room=request.sid)
         else:
             # 2. Cria uma nova sala
-            print(f"✨ Criando nova sala para {user_ids[0]} e {user_ids[1]}")
-            # Cria a sala
             cur.execute("INSERT INTO traduzaibot_chat_rooms (is_private) VALUES (TRUE) RETURNING id")
             new_room_id = cur.fetchone()['id']
             
@@ -312,10 +342,14 @@ def handle_request_conversation(data):
                 # Coloca o User B na sala do Socket.IO também
                 join_room(str(new_room_id), sid=target_socket_sid)
                 
+                # [CORREÇÃO] Busca o nome do usuário alvo para o convite
+                cur.execute("SELECT username FROM traduzaibot_users WHERE id = %s", (target_user_id,))
+                target_user_name = cur.fetchone()['username']
+                
                 # Emite o "convite" (que é apenas a sala nova) para o User B
                 emit('new_conversation_invite', {
                     'room_id': new_room_id,
-                    'with_user': {'id': my_user_id, 'username': my_username}
+                    'with_user': {'id': my_user_id, 'username': my_username, 'partner_name': target_user_name}
                 }, room=target_socket_sid)
 
             # 5. Emite a sala de volta para o solicitante (User A)
@@ -399,11 +433,38 @@ def handle_chat_message(data):
         emit('chat_error', {'error': 'ID da Sala é obrigatório.'})
         return
 
-    # 2. INTERCEPTADOR DE AJUDA (Funciona em qualquer sala)
+    # 2. INTERCEPTADOR DE AJUDA
     if user_message.lower().startswith('/ajuda'):
-        # (Lógica do /ajuda é idêntica à v2, emite SÓ para o request.sid)
-        # ... (código do /ajuda omitido por brevidade, é o mesmo da v2) ...
-        return 
+        query = user_message.lower().replace('/ajuda', '').strip()
+        print(f"🤖 Interceptado /ajuda: '{query}'")
+        try:
+            chat = gemini_model.start_chat()
+            response = chat.send_message(
+                f"Use a ferramenta de busca para responder esta pergunta no idioma '{my_lang}': {query}",
+            )
+            function_call = response.candidates[0].content.parts[0].function_call
+            if function_call.name == "tool_google_search":
+                tool_response = tool_google_search(function_call.args['query'])
+                response = chat.send_message(
+                    part=genai.Part(function_response=genai.FunctionResponse(
+                        name=function_call.name,
+                        response=tool_response
+                    ))
+                )
+            help_text = response.candidates[0].content.parts[0].text
+            message_packet = {
+                'room_id': room_id,
+                'username': 'Sistema de Ajuda',
+                'original_message': user_message, 'original_lang': my_lang,
+                'translated_message': help_text, 'translated_lang': my_lang,
+                'timestamp': datetime.now().strftime('%H:%M')
+            }
+            emit('receive_message', message_packet, room=request.sid)
+            return
+        except Exception as e:
+            print(f"❌ Erro no /ajuda: {e}")
+            emit('chat_error', {'error': f'Erro ao processar /ajuda: {e}'})
+            return
 
     # 3. LÓGICA DE TRADUÇÃO (Normal)
     print(f"💬 Sala {room_id} | Mensagem de '{username}': '{user_message}'")
@@ -440,7 +501,7 @@ def handle_chat_message(data):
 
         # 5. Prepara o pacote de dados
         message_packet = {
-            'room_id': room_id, # Importante
+            'room_id': room_id, 
             'username': username,
             'original_message': user_message,
             'original_lang': my_lang,
@@ -449,8 +510,7 @@ def handle_chat_message(data):
             'timestamp': datetime.now().strftime('%H:%M')
         }
         
-        # 6. Emite para a SALA ESPECÍFICA (NÃO MAIS broadcast=True)
-        # O str(room_id) é importante
+        # 6. Emite para a SALA ESPECÍFICA (corrigido: usa str(room_id))
         emit('receive_message', message_packet, room=str(room_id))
 
     except Exception as e:
@@ -461,6 +521,7 @@ def handle_chat_message(data):
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Servidor Socket.IO (v3 - Salas) rodando em http://localhost:{port}")
+    # Nota: Removido 'async_mode' para maior compatibilidade com Gunicorn no Render
     try:
         socketio.run(app, host="0.0.0.0", port=port, debug=True, allow_unsafe_werkzeug=True)
     except ImportError:

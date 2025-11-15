@@ -385,9 +385,8 @@
                 // (B) Ouve por sucesso na autenticação
                 socket.on('auth_success', (data) => {
                     console.log('Socket autenticado:', data.message);
-                    // (Opcional: Pedir lista de conversas existentes)
-                    // socket.emit('list_conversations', { token: token });
-                    lobbyLoading.style.display = 'none'; // Esconde "Carregando..."
+                    // [NOVO] Carrega conversas existentes APÓS a autenticação do socket
+                    loadLobbyData(); 
                 });
 
                 // (C) Ouve por erros
@@ -405,7 +404,7 @@
                         original_lang: 'pt',
                         translated_lang: 'pt',
                         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                    }, true); // 'isSystem' = true
+                    }, true);
                 });
                 
                 // (D) Ouve por novas mensagens (AGORA INCLUI room_id)
@@ -415,28 +414,28 @@
                     if (packet.room_id === currentRoomId) {
                         addMessageToUI(packet);
                     } else {
-                        // (Opcional: Adicionar notificação de "nova mensagem" no lobby)
-                        document.querySelector(`.conversation-item[data-room-id="${packet.room_id}"]`)?.classList.add('font-bold');
+                        // Notificação no Lobby
+                        const convItem = document.querySelector(`.conversation-item[data-room-id="${packet.room_id}"]`);
+                        if (convItem) {
+                             convItem.classList.add('bg-yellow-800', 'font-bold'); // Destaque para nova msg
+                        } else {
+                            // Se a conversa não estiver na lista (criada por outro)
+                            loadLobbyData(); 
+                        }
                     }
                 });
                 
-                // (E) Ouve por CONVITE ACEITO (quando VOCÊ envia um convite)
+                // (E) Ouve por CONVERSA PRONTA (retorno do seu convite)
                 socket.on('conversation_ready', (data) => {
                     console.log('Conversa pronta (ou criada):', data);
-                    // O backend (v3) já trata de criar/achar a sala.
-                    // Agora só precisamos carregar o chat.
-                    
-                    // (Opcional: Adicionar à lista do lobby se não estiver lá)
-                    // ...
-                    
-                    // Abre a janela de chat
-                    openChatWindow(data.room_id);
+                    // Recarrega o lobby para mostrar a nova conversa e então a abre
+                    loadLobbyData(data.room_id); 
                 });
                 
-                // (F) Ouve por CONVITE RECEBIDO (quando ALGUÉM te convida)
+                // (F) Ouve por CONVITE RECEBIDO (alguém te convidou)
                 socket.on('new_conversation_invite', (data) => {
                     console.log('Convite recebido:', data);
-                    pendingInvite = data; // Salva os dados do convite
+                    pendingInvite = data; 
                     inviteMessage.textContent = `${data.with_user.username} quer iniciar um chat!`;
                     inviteModal.classList.remove('hidden');
                     inviteModal.classList.add('flex');
@@ -445,9 +444,8 @@
                 // (G) Ouve pelo HISTÓRICO do chat (quando abre uma sala)
                 socket.on('chat_history_loaded', (data) => {
                     console.log(`Histórico carregado para sala ${data.room_id}`);
-                    messagesContainer.innerHTML = ''; // Limpa o chat
+                    messagesContainer.innerHTML = ''; 
                     data.messages.forEach(msg => {
-                        // Reconstrói o 'packet' para a função addMessageToUI
                         addMessageToUI({
                             username: msg.username,
                             message_original: msg.message_original,
@@ -460,16 +458,84 @@
                 });
             }
             
+            // --- 6. LÓGICA DO LOBBY (Nova) ---
+            
+            async function loadLobbyData(roomToOpen = null) {
+                if (!token) return;
+                lobbyLoading.style.display = 'block';
+                lobbyConversations.innerHTML = '';
+                
+                try {
+                    // [CORREÇÃO] Chamada para a nova rota que retorna users e conversas
+                    const response = await fetch('/api/chat/users', { 
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (response.status === 401) throw new Error("Não autorizado");
+
+                    const data = await response.json();
+                    
+                    // Renderiza as conversas existentes
+                    data.conversations.forEach(conv => {
+                        renderConversationItem(conv.room_id, conv.partner_username);
+                    });
+
+                    // Se não houver conversas, mostra um ícone de pessoa (para começar)
+                    if (data.conversations.length === 0) {
+                        lobbyConversations.innerHTML = '<p class="text-center text-gray-400 text-sm">Você ainda não tem conversas.</p>';
+                    }
+
+                    // Abre uma sala se um ID foi passado (após criar uma nova)
+                    if (roomToOpen) {
+                        openChatWindow(roomToOpen, data.conversations.find(c => c.room_id === roomToOpen)?.partner_username || 'Chat');
+                    }
+                    
+                } catch (error) {
+                    console.error("Erro ao carregar dados do lobby:", error);
+                    lobbyConversations.innerHTML = '<p class="text-center text-red-400 text-sm">Erro ao carregar conversas.</p>';
+                } finally {
+                    lobbyLoading.style.display = 'none';
+                }
+            }
+
+            function renderConversationItem(roomId, partnerName) {
+                // [CORREÇÃO] Evita duplicatas ao carregar (se o item já estiver na lista, apenas o ignora)
+                if (document.querySelector(`.conversation-item[data-room-id="${roomId}"]`)) return;
+                
+                const item = document.createElement('div');
+                item.className = 'conversation-item p-3 rounded-lg cursor-pointer bg-gray-700 hover:bg-gray-600 transition-colors flex items-center gap-3';
+                item.setAttribute('data-room-id', roomId);
+                item.setAttribute('data-partner-name', partnerName);
+                item.onclick = () => openChatWindow(roomId, partnerName);
+                
+                item.innerHTML = `
+                    <i class="fas fa-user-circle text-2xl text-blue-400"></i>
+                    <div>
+                        <strong class="block text-sm">${partnerName}</strong>
+                        <span class="text-xs text-gray-400">Nova Conversa.</span>
+                    </div>
+                `;
+                lobbyConversations.appendChild(item);
+            }
+
             // (H) Abre a Janela de Chat
-            function openChatWindow(roomId) {
+            function openChatWindow(roomId, partnerName) {
                 console.log(`Abrindo chat para sala: ${roomId}`);
+                
+                // Remove destaque de todos e ativa o selecionado
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                    item.classList.remove('bg-yellow-800', 'font-bold'); // Remove notificação
+                });
+                document.querySelector(`.conversation-item[data-room-id="${roomId}"]`)?.classList.add('active');
+
                 currentRoomId = roomId;
                 
                 // Atualiza a UI
                 chatEmptyState.classList.add('hidden');
                 chatActiveState.classList.remove('hidden');
                 chatActiveState.classList.add('flex');
-                chatHeaderUsername.textContent = "Carregando..."; // (Idealmente, salvar o nome do user em 'conversations')
+                chatHeaderUsername.textContent = partnerName; 
                 messagesContainer.innerHTML = '<p class="text-center text-gray-400">Carregando histórico...</p>';
                 
                 // Pede o histórico de mensagens para esta sala
@@ -487,28 +553,26 @@
                 const myLang = myLangSelect.value;
                 const targetLang = targetLangSelect.value;
 
-                // Só envia se estiver em uma sala
                 if (message && token && currentRoomId) {
                     socket.emit('send_message', {
                         'message': message,
                         'my_lang': myLang,
                         'target_lang': targetLang,
                         'token': token,
-                        'room_id': currentRoomId // <-- A MUDANÇA CRUCIAL
+                        'room_id': currentRoomId
                     });
                     messageInput.value = '';
                 }
             }
 
-            // (J) Adiciona mensagem na UI
+            // (J) Adiciona mensagem na UI (inclusa no corpo da página)
             function addMessageToUI(packet, isSystem = false) {
-                // (Idêntico à v2, mas agora verifica 'user.username')
                 const isMe = packet.username === user.username;
                 const bubble = document.createElement('div');
                 let bgColor, roundedCorners, textColor, nameColor;
 
                 if (isSystem) {
-                    bubble.className = 'flex justify-center'; // Mensagem de erro/sistema
+                    bubble.className = 'flex justify-center';
                     bgColor = 'bg-red-800';
                     textColor = 'text-red-100';
                     nameColor = 'text-white';
@@ -546,20 +610,20 @@
             });
             inviteAcceptBtn.addEventListener('click', () => {
                 if (!pendingInvite) return;
-                // (Opcional: adicionar na lista do lobby)
-                // ...
+                
+                // Adiciona o novo item de conversa no Lobby (sem recarregar tudo)
+                renderConversationItem(pendingInvite.room_id, pendingInvite.with_user.username);
+                
                 // Abre a janela de chat para a sala do convite
-                openChatWindow(pendingInvite.room_id);
+                openChatWindow(pendingInvite.room_id, pendingInvite.with_user.username);
                 inviteModal.classList.add('hidden');
                 pendingInvite = null;
             });
             
             // --- 5. INICIALIZAÇÃO ---
             if (token && user) {
-                console.log('Token encontrado. Iniciando o chat...');
                 initChatApp();
             } else {
-                console.log('Nenhum token. Mostrando tela de login.');
                 authScreen.classList.remove('hidden');
                 authScreen.classList.add('flex');
             }
