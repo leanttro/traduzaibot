@@ -4,3 +4,6 @@ gevent
 gunicorn
 google-generativeai
 python-dotenv
+psycopg2-binary
+PyJWT
+google-api-python-client

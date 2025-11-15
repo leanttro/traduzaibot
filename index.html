@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TraduzAIBot | Chat Global</title>
     
-    <!-- Tailwind CSS para estilo rápido -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Biblioteca Cliente do Socket.IO (ESSENCIAL) -->
@@ -19,50 +19,110 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #111827; /* gray-900 */
         }
         /* Ajuste para a barra de rolagem */
-        #messages-container::-webkit-scrollbar {
-            width: 6px;
+        #messages-container::-webkit-scrollbar { width: 6px; }
+        #messages-container::-webkit-scrollbar-track { background: #374151; /* gray-700 */ }
+        #messages-container::-webkit-scrollbar-thumb { background: #6b7280; /* gray-500 */ border-radius: 3px; }
+        
+        /* Esconde o spinner de inputs de número */
+        input[type='number']::-webkit-inner-spin-button,
+        input[type='number']::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
-        #messages-container::-webkit-scrollbar-track {
-            background: #2d3748; /* gray-800 */
-        }
-        #messages-container::-webkit-scrollbar-thumb {
-            background: #4a5568; /* gray-600 */
-            border-radius: 3px;
+        input[type='number'] {
+            -moz-appearance: textfield;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white h-screen flex flex-col antialiased">
+<body class="text-white h-screen flex flex-col antialiased">
 
-    <!-- TELA DE LOGIN (Inicia visível) -->
-    <div id="username-screen" class="flex items-center justify-center h-full">
-        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm">
-            <h2 class="text-2xl font-bold text-center mb-6">Entrar no TraduzAIBot</h2>
-            <div class="space-y-4">
-                <input 
-                    type="text" 
-                    id="username-input" 
-                    placeholder="Digite seu nome..." 
-                    class="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                <button 
-                    id="join-button" 
-                    class="w-full p-3 bg-blue-600 rounded-md font-semibold hover:bg-blue-700 transition-colors"
-                >
-                    Entrar no Chat
+    <!-- TELA DE AUTENTICAÇÃO (Inicia visível) -->
+    <div id="auth-screen" class="flex items-center justify-center h-full">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+            
+            <!-- Abas de Login / Registro -->
+            <div class="flex border-b border-gray-700 mb-6">
+                <button id="tab-login" class="flex-1 py-3 font-semibold text-white border-b-2 border-blue-500">
+                    Entrar
+                </button>
+                <button id="tab-register" class="flex-1 py-3 font-semibold text-gray-400 border-b-2 border-transparent hover:text-white">
+                    Registrar
                 </button>
             </div>
+
+            <!-- Painel de Login (do seu 'portal.html', estilizado) -->
+            <div id="login-panel">
+                <form id="login-form" class="space-y-4">
+                    <h2 class="text-xl font-bold text-center mb-4">Acesse sua Conta</h2>
+                    <div>
+                        <label for="login-access-code" class="block mb-2 text-sm font-medium text-gray-300">Código de Acesso</label>
+                        <input 
+                            type="text" 
+                            id="login-access-code" 
+                            placeholder="Seu código único (ex: A1B2C3D4)" 
+                            class="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        >
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full p-3 bg-blue-600 rounded-md font-semibold hover:bg-blue-700 transition-colors"
+                    >
+                        Conectar
+                    </button>
+                    <p id="login-error" class="text-red-400 text-sm text-center hidden"></p>
+                </form>
+            </div>
+            
+            <!-- Painel de Registro (Novo) -->
+            <div id="register-panel" class="hidden">
+                <form id="register-form" class="space-y-4">
+                    <h2 class="text-xl font-bold text-center mb-4">Crie sua Conta</h2>
+                    <div>
+                        <label for="register-username" class="block mb-2 text-sm font-medium text-gray-300">Seu Nome (Username)</label>
+                        <input 
+                            type="text" 
+                            id="register-username" 
+                            placeholder="Como você quer ser chamado" 
+                            class="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        >
+                    </div>
+                    <div>
+                        <label for="register-email" class="block mb-2 text-sm font-medium text-gray-300">Seu Email</label>
+                        <input 
+                            type="email" 
+                            id="register-email" 
+                            placeholder="seu-email@dominio.com" 
+                            class="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        >
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full p-3 bg-green-600 rounded-md font-semibold hover:bg-green-700 transition-colors"
+                    >
+                        Criar Conta
+                    </button>
+                    <p id="register-error" class="text-red-400 text-sm text-center hidden"></p>
+                    <p id="register-success" class="text-green-400 text-sm text-center hidden"></p>
+                </form>
+            </div>
+
         </div>
     </div>
 
     <!-- TELA DE CHAT (Inicia oculta) -->
     <div id="chat-screen" class="hidden flex-col h-full">
         <!-- Header do Chat -->
-        <header class="bg-gray-800 py-4 px-6 shadow-md flex justify-between items-center">
-            <h1 class="text-xl font-bold">TraduzAIBot 🌎</h1>
-            <div class="text-sm">
-                Conectado como: <span id="username-display" class="font-semibold">...</span>
+        <header class="bg-gray-800 py-4 px-6 shadow-md flex justify-between items-center flex-shrink-0">
+            <h1 class="text-xl font-bold">TraduzAIBot 🌎 <span class="text-base font-normal text-gray-400">(Chat Global)</span></h1>
+            <div class="text-sm text-right">
+                <span id="username-display" class="font-semibold">...</span>
+                <button id="logout-button" class="ml-2 text-red-400 hover:text-red-300 text-xs">(Sair)</button>
             </div>
         </header>
 
@@ -70,15 +130,18 @@
         <main id="messages-container" class="flex-grow overflow-y-auto p-6 space-y-4">
             <!-- Mensagens do chat serão injetadas aqui pelo JS -->
             <div class="flex justify-start">
-                <div class="bg-gray-700 rounded-lg rounded-bl-none p-3 max-w-lg">
-                    <div class="font-bold text-blue-300">Sistema</div>
-                    <p class="text-sm mt-1">Bem-vindo! As mensagens enviadas serão traduzidas para todos os usuários.</p>
+                <div class="bg-gray-700 rounded-lg rounded-bl-none p-3 max-w-lg shadow-md">
+                    <div class="font-bold text-blue-300 text-sm">Sistema</div>
+                    <p class="text-base mt-1">Bem-vindo! Você está no chat global.</p>
+                    <p class="text-xs text-gray-300 opacity-80 mt-2 pt-1 border-t border-white/20">
+                        Para ajuda, digite: <strong class="text-white">/ajuda sua pergunta</strong>
+                    </p>
                 </div>
             </div>
         </main>
 
         <!-- Área de Input -->
-        <footer class="p-4 bg-gray-800 shadow-inner">
+        <footer class="p-4 bg-gray-800 shadow-inner flex-shrink-0">
             <!-- Seletores de Idioma -->
             <div class="flex items-center gap-4 mb-3">
                 <div class="flex-1">
@@ -108,7 +171,7 @@
                 <input 
                     type="text" 
                     id="message-input" 
-                    placeholder="Digite sua mensagem..." 
+                    placeholder="Digite sua mensagem ou /ajuda ..." 
                     class="flex-grow p-3 bg-gray-700 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autocomplete="off"
                 >
@@ -125,71 +188,262 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             
-            // --- 1. CONEXÃO COM O SOCKET.IO ---
-            // O `io()` se conecta ao servidor Flask-SocketIO que serviu a página.
-            const socket = io();
-
-            // --- 2. SELEÇÃO DOS ELEMENTOS DO DOM ---
-            const usernameScreen = document.getElementById('username-screen');
+            // --- 1. VARIÁVEIS GLOBAIS ---
+            let socket = null;
+            let token = localStorage.getItem('traduzaibot_jwt');
+            let user = JSON.parse(localStorage.getItem('traduzaibot_user'));
+            
+            // --- 2. SELEÇÃO DE ELEMENTOS DO DOM ---
+            // Telas
+            const authScreen = document.getElementById('auth-screen');
             const chatScreen = document.getElementById('chat-screen');
             
-            const usernameInput = document.getElementById('username-input');
-            const joinButton = document.getElementById('join-button');
-            const usernameDisplay = document.getElementById('username-display');
+            // Abas
+            const tabLogin = document.getElementById('tab-login');
+            const tabRegister = document.getElementById('tab-register');
+            const loginPanel = document.getElementById('login-panel');
+            const registerPanel = document.getElementById('register-panel');
             
+            // Formulários
+            const loginForm = document.getElementById('login-form');
+            const registerForm = document.getElementById('register-form');
+            const loginAccessCode = document.getElementById('login-access-code');
+            const registerUsername = document.getElementById('register-username');
+            const registerEmail = document.getElementById('register-email');
+            
+            // Mensagens de Erro/Sucesso
+            const loginError = document.getElementById('login-error');
+            const registerError = document.getElementById('register-error');
+            const registerSuccess = document.getElementById('register-success');
+
+            // Chat
+            const usernameDisplay = document.getElementById('username-display');
+            const logoutButton = document.getElementById('logout-button');
             const messagesContainer = document.getElementById('messages-container');
             const messageInput = document.getElementById('message-input');
             const sendButton = document.getElementById('send-button');
-            
             const myLangSelect = document.getElementById('my-lang');
             const targetLangSelect = document.getElementById('target-lang');
-            
-            let myUsername = ''; // Variável para guardar o nome do usuário
 
-            // --- 3. LÓGICA DE LOGIN ---
-            function joinChat() {
-                const username = usernameInput.value.trim();
-                if (username) {
-                    myUsername = username;
-                    usernameDisplay.textContent = myUsername;
-                    
-                    // Esconde a tela de login e mostra a tela de chat
-                    usernameScreen.classList.add('hidden');
-                    chatScreen.classList.remove('hidden');
-                    chatScreen.classList.add('flex');
-                    
-                    messageInput.focus();
-                } else {
-                    alert('Por favor, digite um nome de usuário.');
-                }
-            }
+            // --- 3. LÓGICA DE AUTENTICAÇÃO (HTTP) ---
             
-            // Event Listeners para o Login
-            joinButton.addEventListener('click', joinChat);
-            usernameInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    joinChat();
+            // Troca de Abas
+            tabLogin.addEventListener('click', () => {
+                loginPanel.classList.remove('hidden');
+                registerPanel.classList.add('hidden');
+                tabLogin.classList.add('text-white', 'border-blue-500');
+                tabLogin.classList.remove('text-gray-400', 'border-transparent');
+                tabRegister.classList.add('text-gray-400', 'border-transparent');
+                tabRegister.classList.remove('text-white', 'border-blue-500');
+            });
+            tabRegister.addEventListener('click', () => {
+                registerPanel.classList.remove('hidden');
+                loginPanel.classList.add('hidden');
+                tabRegister.classList.add('text-white', 'border-blue-500');
+                tabRegister.classList.remove('text-gray-400', 'border-transparent');
+                tabLogin.classList.add('text-gray-400', 'border-transparent');
+                tabLogin.classList.remove('text-white', 'border-blue-500');
+            });
+            
+            // Registro
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                registerError.classList.add('hidden');
+                registerSuccess.classList.add('hidden');
+                const btn = registerForm.querySelector('button');
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: registerUsername.value,
+                            email: registerEmail.value
+                        })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Erro desconhecido');
+                    
+                    registerSuccess.textContent = `✅ Sucesso! Seu código de acesso é: ${data.access_code}. Anote e faça o login!`;
+                    registerSuccess.classList.remove('hidden');
+                    registerForm.reset();
+                    // Muda para a aba de login
+                    tabLogin.click();
+                    loginAccessCode.value = data.access_code;
+                    
+                } catch (err) {
+                    registerError.textContent = `❌ ${err.message}`;
+                    registerError.classList.remove('hidden');
+                } finally {
+                    btn.disabled = false;
                 }
             });
+            
+            // Login
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                loginError.classList.add('hidden');
+                const btn = loginForm.querySelector('button');
+                btn.disabled = true;
 
-            // --- 4. LÓGICA DE ENVIO DE MENSAGEM ---
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            access_code: loginAccessCode.value
+                        })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Erro desconhecido');
+                    
+                    // Salva tudo no localStorage
+                    localStorage.setItem('traduzaibot_jwt', data.token);
+                    localStorage.setItem('traduzaibot_user', JSON.stringify(data.user));
+                    
+                    // Atualiza as variáveis globais
+                    token = data.token;
+                    user = data.user;
+                    
+                    // Inicia o Chat
+                    initChatApp();
+                    
+                } catch (err) {
+                    loginError.textContent = `❌ ${err.message}`;
+                    loginError.classList.remove('hidden');
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+            
+            // Logout
+            logoutButton.addEventListener('click', () => {
+                localStorage.removeItem('traduzaibot_jwt');
+                localStorage.removeItem('traduzaibot_user');
+                token = null;
+                user = null;
+                
+                if (socket) {
+                    socket.disconnect();
+                }
+                
+                chatScreen.classList.add('hidden');
+                chatScreen.classList.remove('flex');
+                authScreen.classList.remove('hidden');
+                authScreen.classList.add('flex');
+                loginForm.reset();
+                registerForm.reset();
+            });
+            
+            // --- 4. LÓGICA DO CHAT (WEBSOCKET) ---
+            
+            function initChatApp() {
+                // Esconde Auth, Mostra Chat
+                authScreen.classList.add('hidden');
+                authScreen.classList.remove('flex');
+                chatScreen.classList.remove('hidden');
+                chatScreen.classList.add('flex');
+                
+                usernameDisplay.textContent = user.username;
+                messageInput.focus();
+
+                // Conecta ao Socket.IO
+                socket = io();
+
+                // (A) Autentica o socket assim que conectar
+                socket.on('connect', () => {
+                    console.log('Socket conectado. Autenticando...');
+                    socket.emit('authenticate', { token: token });
+                });
+                
+                // (B) Ouve por sucesso na autenticação
+                socket.on('auth_success', (data) => {
+                    console.log('Socket autenticado:', data.message);
+                    // (Opcional: carregar histórico de mensagens globais aqui)
+                });
+                
+                // (C) Ouve por erros de autenticação ou chat
+                socket.on('auth_error', (data) => {
+                    console.error('Falha na autenticação do Socket:', data.error);
+                    alert('Sua sessão expirou. Por favor, faça login novamente.');
+                    logoutButton.click();
+                });
+                socket.on('chat_error', (data) => {
+                    console.error('Erro do servidor:', data.error);
+                    addMessageToUI({
+                        username: 'Sistema',
+                        original_message: data.error,
+                        translated_message: data.error,
+                        original_lang: 'pt',
+                        translated_lang: 'pt',
+                        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                    }, true); // 'isSystem' = true
+                });
+
+                // (D) Ouve por novas mensagens (a parte mais importante)
+                socket.on('receive_message', (packet) => {
+                    console.log('Mensagem recebida:', packet);
+                    addMessageToUI(packet);
+                });
+            }
+            
             function sendMessage() {
                 const message = messageInput.value.trim();
                 const myLang = myLangSelect.value;
                 const targetLang = targetLangSelect.value;
 
-                if (message && myUsername) {
+                if (message && token) {
                     // Emite o evento 'send_message' para o servidor Python
                     socket.emit('send_message', {
                         'message': message,
                         'my_lang': myLang,
                         'target_lang': targetLang,
-                        'username': myUsername
+                        'token': token // Envia o token para o backend saber quem é
                     });
                     
-                    // Limpa o input
                     messageInput.value = '';
                 }
+            }
+            
+            function addMessageToUI(packet, isSystem = false) {
+                // Verifica se a mensagem é deste próprio usuário
+                const isMe = packet.username === user.username;
+                
+                // Cria o elemento da bolha de chat
+                const bubble = document.createElement('div');
+                let bgColor, roundedCorners, textColor, nameColor;
+
+                if (isSystem) {
+                    bubble.className = 'flex justify-center'; // Mensagem de erro/sistema
+                    bgColor = 'bg-red-800';
+                    textColor = 'text-red-100';
+                    nameColor = 'text-white';
+                } else {
+                    bubble.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+                    bgColor = isMe ? 'bg-blue-600' : 'bg-gray-700';
+                    roundedCorners = isMe ? 'rounded-br-none' : 'rounded-bl-none';
+                    textColor = 'text-white';
+                    nameColor = isMe ? 'text-white' : 'text-blue-300';
+                }
+                
+                // Monta o HTML interno da bolha
+                bubble.innerHTML = `
+                    <div class="${bgColor} ${roundedCorners || 'rounded-lg'} p-3 max-w-lg shadow-md">
+                        <div class="font-bold ${nameColor} text-sm">${packet.username}</div>
+                        
+                        <!-- Mensagem Traduzida (Principal) -->
+                        <p class="text-base ${textColor} mt-1">${packet.translated_message}</p>
+                        
+                        <!-- Mensagem Original (Secundária) -->
+                        <p class="text-xs text-gray-300 opacity-80 mt-2 pt-1 border-t border-white/20">
+                            (${packet.original_lang}): ${packet.original_message}
+                        </p>
+                    </div>
+                `;
+                
+                messagesContainer.appendChild(bubble);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
             
             // Event Listeners para Enviar Mensagem
@@ -201,58 +455,17 @@
                 }
             });
             
-            // --- 5. LÓGICA DE RECEBIMENTO DE MENSAGEM ---
-            // Ouve o evento 'receive_message' que o servidor emite
-            socket.on('receive_message', (packet) => {
-                console.log('Mensagem recebida:', packet);
-                
-                // Verifica se a mensagem é deste próprio usuário
-                const isMe = packet.username === myUsername;
-                
-                // Cria o elemento da bolha de chat
-                const bubble = document.createElement('div');
-                bubble.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
-                
-                // Define a cor e o alinhamento da bolha
-                const bgColor = isMe ? 'bg-blue-600' : 'bg-gray-700';
-                const roundedCorners = isMe ? 'rounded-br-none' : 'rounded-bl-none';
-                
-                // Monta o HTML interno da bolha
-                bubble.innerHTML = `
-                    <div class="${bgColor} rounded-lg ${roundedCorners} p-3 max-w-lg shadow-md">
-                        <div class="font-bold ${isMe ? 'text-white' : 'text-blue-300'} text-sm">${packet.username}</div>
-                        
-                        <!-- Mensagem Traduzida (Principal) -->
-                        <p class="text-base mt-1">${packet.translated_message}</p>
-                        
-                        <!-- Mensagem Original (Secundária) -->
-                        <p class="text-xs text-gray-300 opacity-80 mt-2 pt-1 border-t border-white/20">
-                            (${packet.original_lang}): ${packet.original_message}
-                        </p>
-                    </div>
-                `;
-                
-                messagesContainer.appendChild(bubble);
-                
-                // Rola para o final do chat
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            });
-            
-            // Ouve por erros do servidor
-            socket.on('chat_error', (data) => {
-                console.error('Erro do servidor:', data.error);
-                // Você pode adicionar uma mensagem de erro no chat aqui
-                const errorBubble = document.createElement('div');
-                errorBubble.className = 'flex justify-center';
-                errorBubble.innerHTML = `
-                    <div class="bg-red-800 text-red-100 rounded-lg p-3 max-w-lg text-sm">
-                        <strong>Erro do Sistema:</strong> ${data.error}
-                    </div>
-                `;
-                messagesContainer.appendChild(errorBubble);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            });
-            
+            // --- 5. INICIALIZAÇÃO ---
+            if (token && user) {
+                // Tenta iniciar o app direto
+                console.log('Token encontrado. Iniciando o chat...');
+                initChatApp();
+            } else {
+                // Mostra a tela de login
+                console.log('Nenhum token. Mostrando tela de login.');
+                authScreen.classList.remove('hidden');
+                authScreen.classList.add('flex');
+            }
         });
     </script>
 </body>
