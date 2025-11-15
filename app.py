@@ -97,7 +97,7 @@ def register_user():
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO traduzaibot_users (username, email, access_code) VALUES (%s, %s, %s)",
-            # CORREÇÃO: Forçando o código de acesso a ser salvo em letras maiúsculas
+            # CORREÇÃO: Salvando o código de acesso em MAIÚSCULAS para consistência
             (username, email, access_code.upper())
         )
         conn.commit()
@@ -115,7 +115,7 @@ def register_user():
 @app.route('/api/auth/login', methods=['POST'])
 def login_user():
     data = request.get_json()
-    # CORREÇÃO CRÍTICA: Remove espaços e coloca em MAIÚSCULAS para bater com o DB
+    # CORREÇÃO CRÍTICA: Remove espaços (.strip()) e força MAIÚSCULAS (.upper())
     access_code = data.get('access_code', '').strip().upper() 
     
     if not access_code:
@@ -174,7 +174,7 @@ def token_required(f):
 def find_user(current_user_id):
     """Busca um usuário pelo email ou código para iniciar chat."""
     data = request.get_json()
-    # CORREÇÃO: Remove espaços e coloca em MAIÚSCULAS
+    # CORREÇÃO: Remove espaços (.strip()) e força MAIÚSCULAS (.upper())
     query = data.get('query', '').strip().upper() 
     if not query:
         return jsonify({'error': 'Termo de busca (email ou código) é obrigatório.'}), 400
@@ -183,11 +183,10 @@ def find_user(current_user_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        # Busca por email OU código, e que NÃO SEJA o próprio usuário
+        # Busca por email (minúsculo) OU código (maiúsculo e limpo), e que NÃO SEJA o próprio usuário
         cur.execute(
-            # A busca por email não deve ser .upper(), apenas o código
-            "SELECT id, username, email FROM traduzaibot_users WHERE (email = %s OR access_code = %s) AND id != %s",
-            (query.lower(), query, current_user_id) # Usando lower() para email e upper() para código
+            "SELECT id, username, email FROM traduzaibot_users WHERE (LOWER(email) = %s OR access_code = %s) AND id != %s",
+            (query.lower(), query, current_user_id) 
         )
         user = cur.fetchone()
         if user:
@@ -231,7 +230,7 @@ def list_users(current_user_id):
         if conn: conn.close()
 
 # --- 7. HANDLERS DE CHAT (WEBSOCKET) ---
-# (Restante do SocketIO omitido por ser igual)
+# (O restante do SocketIO permanece o mesmo, focado em Salas e Tradução)
 user_socket_map = {} 
 socket_user_map = {} 
 
@@ -463,6 +462,7 @@ def handle_chat_message(data):
                         response=tool_response
                     ))
                 )
+            # CORREÇÃO: Pega o texto gerado após a ferramenta
             help_text = response.candidates[0].content.parts[0].text
             message_packet = {
                 'room_id': room_id,
@@ -491,6 +491,7 @@ def handle_chat_message(data):
             translation_prompt,
             safety_settings={'HATE': 'BLOCK_NONE', 'HARASSMENT': 'BLOCK_NONE'}
         )
+        # CORREÇÃO: Pega o texto gerado
         translated_text = response.text.strip()
 
         # 4. SALVA NO BANCO DE DADOS (com o room_id correto)
